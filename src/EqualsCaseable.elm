@@ -13,7 +13,7 @@ import Elm.Syntax.Range exposing (emptyRange)
 import Review.Rule as Rule exposing (Rule)
 
 
-{-| Reports when `==` is used when there is an equivalent `case of` available.
+{-| Reports when `==` is used but there's there is an equivalent `case of` available.
 
     config =
         [ EqualsCaseable.forbid EqualsCaseable.InIf
