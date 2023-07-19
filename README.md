@@ -1,6 +1,6 @@
 # [elm-review-equals-caseable](https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/)
 
-Provides the [`elm-review`](https://package.elm-lang.org/packages/jfmengels/elm-review/latest/) rule [`EqualsCaseable.forbid`](EqualsCaseable#forbid) which reports when `==` is used but there's an equivalent `case of` available.
+Provides the [`elm-review`](https://package.elm-lang.org/packages/jfmengels/elm-review/latest/) rule [🔧`EqualsCaseable.forbid`](EqualsCaseable#forbid) which reports when `==` is used but there's an equivalent `case of` available.
 
 ## try it out
 
