@@ -137,6 +137,18 @@ not reported
                             False
                 )
 
+
+### What should I choose?
+
+If `(\a -> a.something == Variant)` etc is a very common pattern
+in your code base, you'll have an easier time
+converting all the `if`s first.
+
+To get the discussed benefits like "Now the compiler will tell me all the places I need to make a new decision",
+you do need to refactor all these equality checks.
+
+Your goal should be `EqualsCaseable.forbid Everywhere`
+
 -}
 type ForbiddenLocation
     = InIf
