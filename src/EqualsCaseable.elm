@@ -10,7 +10,7 @@ import Elm.Pretty
 import Elm.Syntax.Expression as Expression exposing (Expression)
 import Elm.Syntax.Node as Node exposing (Node(..))
 import Elm.Syntax.Pattern as Pattern exposing (Pattern)
-import Elm.Syntax.Range exposing (Range, emptyRange)
+import Elm.Syntax.Range as Range exposing (Range, emptyRange)
 import Pretty
 import Review.Fix as Fix
 import Review.Rule as Rule exposing (Rule)
@@ -54,14 +54,30 @@ can be either
 forbid : ForbiddenLocation -> Rule
 forbid forbiddenLocation =
     Rule.newModuleRuleSchemaUsingContextCreator "EqualsCaseable.forbid" initialContext
+        |> Rule.providesFixesForModuleRule
         |> Rule.withExpressionEnterVisitor
             (\expression context ->
-                ( expressionVisitor
-                    { forbiddenLocation = forbiddenLocation
-                    , extractSourceCode = context.extractSourceCode
-                    , expression = expression
-                    }
-                , context
+                if
+                    context.alreadyCovered
+                        |> List.any (\range -> range |> rangeIsInside (expression |> Node.range))
+                then
+                    ( [], context )
+
+                else
+                    expressionVisitor
+                        { forbiddenLocation = forbiddenLocation
+                        , context = context
+                        , expression = expression
+                        }
+            )
+        |> Rule.withExpressionExitVisitor
+            (\(Node expressionRange _) context ->
+                ( []
+                , { context
+                    | alreadyCovered =
+                        context.alreadyCovered
+                            |> List.filter (\range -> range /= expressionRange)
+                  }
                 )
             )
         |> Rule.fromModuleRuleSchema
@@ -128,14 +144,18 @@ type ForbiddenLocation
 
 
 type alias Context =
-    { extractSourceCode : Range -> String }
+    { extractSourceCode : Range -> String
+    , alreadyCovered : List Range
+    }
 
 
 initialContext : Rule.ContextCreator () Context
 initialContext =
     Rule.initContextCreator
         (\extractSourceCode () ->
-            { extractSourceCode = extractSourceCode }
+            { extractSourceCode = extractSourceCode
+            , alreadyCovered = []
+            }
         )
         |> Rule.withSourceCodeExtractor
 
@@ -229,13 +249,10 @@ matchToCaseOf match =
             |> listFilledMap (\pattern -> pattern |> Elm.Pretty.prettyPattern |> Pretty.pretty 100)
             |> toNestedTuple
       , " ->\n"
-      , match.cases.match |> unindentFully |> indent
-      ]
-        |> String.concat
-        |> indent
-    , "\n\n"
-    , [ "_ ->\n"
-      , match.cases.mismatch |> unindentFully |> indent
+      , match.cases.match |> removeSharedIndentation |> indent
+      , "\n\n"
+      , "_ ->\n"
+      , match.cases.mismatch |> removeSharedIndentation |> indent
       ]
         |> String.concat
         |> indent
@@ -274,8 +291,16 @@ indentBy howMuch =
             |> String.join "\n"
 
 
-unindentFully : String -> String
-unindentFully =
+afterFirstIndentBy : Int -> String -> String
+afterFirstIndentBy howMuch =
+    \code ->
+        code
+            |> String.lines
+            |> String.join ("\n" ++ String.repeat howMuch " ")
+
+
+removeSharedIndentation : String -> String
+removeSharedIndentation =
     \code ->
         let
             minIndentation : Maybe Int
@@ -330,30 +355,65 @@ parenthesize =
 expressionVisitor :
     { forbiddenLocation : ForbiddenLocation
     , expression : Node Expression
-    , extractSourceCode : Range -> String
+    , context : Context
     }
-    -> List (Rule.Error {})
+    -> ( List (Rule.Error {}), Context )
 expressionVisitor context =
     case context.expression |> Node.value of
         Expression.IfBlock condition (Node onTrueRange _) (Node onFalseRange _) ->
-            ifCheck
-                { extractSourceCode = context.extractSourceCode
-                , expressionRange = context.expression |> Node.range
-                , onTrueRange = onTrueRange
-                , onFalseRange = onFalseRange
-                , condition = condition
-                }
+            let
+                errors : List (Rule.Error {})
+                errors =
+                    ifCheck
+                        { extractSourceCode = context.context.extractSourceCode
+                        , expressionRange = context.expression |> Node.range
+                        , onTrueRange = onTrueRange
+                        , onFalseRange = onFalseRange
+                        , condition = condition
+                        }
+            in
+            case errors of
+                [] ->
+                    ( [], context.context )
+
+                error0 :: error1Up ->
+                    ( error0 :: error1Up
+                    , context.context
+                        |> addCovered (condition |> Node.range)
+                    )
 
         nonIf ->
             case context.forbiddenLocation of
                 InIf ->
-                    []
+                    ( [], context.context )
 
                 Everywhere ->
-                    nonIfCheck
-                        { extractSourceCode = context.extractSourceCode
-                        , expression = nonIf |> Node (context.expression |> Node.range)
-                        }
+                    let
+                        errors : List (Rule.Error {})
+                        errors =
+                            nonIfCheck
+                                { extractSourceCode = context.context.extractSourceCode
+                                , expression = nonIf |> Node (context.expression |> Node.range)
+                                }
+                    in
+                    case errors of
+                        [] ->
+                            ( [], context.context )
+
+                        error0 :: error1Up ->
+                            ( error0 :: error1Up
+                            , context.context
+                                |> addCovered (context.expression |> Node.range)
+                            )
+
+
+addCovered : Range -> Context -> Context
+addCovered newCoveredRange =
+    \context ->
+        { context
+            | alreadyCovered =
+                context.alreadyCovered |> (::) newCoveredRange
+        }
 
 
 ifCheck :
@@ -397,7 +457,7 @@ ifCheck context =
                                     }
                           }
                             |> matchToCaseOf
-                            |> indentBy (indentation (context.extractSourceCode context.expressionRange))
+                            |> afterFirstIndentBy (context.expressionRange.start.column - 1)
                             |> Fix.replaceRangeBy context.expressionRange
                         ]
                     ]
@@ -426,7 +486,7 @@ nonIfCheck context =
                           }
                             |> matchToCaseOf
                             |> parenthesize
-                            |> indentBy (indentation (context.extractSourceCode (context.expression |> Node.range)))
+                            |> afterFirstIndentBy ((context.expression |> Node.range).start.column - 1)
                             |> Fix.replaceRangeBy (context.expression |> Node.range)
                         ]
                     ]
@@ -486,7 +546,7 @@ equalCaseablesPossiblyInAnd expression =
                 equalityWithCaseable equality =
                     case left |> Node.value |> expressionToPattern of
                         Just leftAsPattern ->
-                            listFilledOne { matchedRange = left |> Node.range, equality = equality, pattern = leftAsPattern } |> Ok
+                            listFilledOne { matchedRange = right |> Node.range, equality = equality, pattern = leftAsPattern } |> Ok
 
                         Nothing ->
                             case right |> Node.value |> expressionToPattern of
@@ -496,7 +556,7 @@ equalCaseablesPossiblyInAnd expression =
                                         |> Err
 
                                 Just rightAsPattern ->
-                                    listFilledOne { matchedRange = right |> Node.range, equality = equality, pattern = rightAsPattern } |> Ok
+                                    listFilledOne { matchedRange = left |> Node.range, equality = equality, pattern = rightAsPattern } |> Ok
             in
             case symbol of
                 "&&" ->
@@ -639,3 +699,10 @@ isVariantName name =
 
         Just ( headChar, _ ) ->
             headChar |> Char.isUpper
+
+
+rangeIsInside : Range -> Range -> Bool
+rangeIsInside potentialEnclosingRange =
+    \range ->
+        Range.combine [ range, potentialEnclosingRange ]
+            == potentialEnclosingRange
