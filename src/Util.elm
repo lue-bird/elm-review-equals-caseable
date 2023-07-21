@@ -2,7 +2,7 @@ module Util exposing
     ( listAllJustMap
     , ListFilled, listFilledOne
     , listFilledHead, listFilledAll
-    , listFirstJustMap, listFilledAllOkMap, listFilledConcat, listFilledMap
+    , listFirstJustMap, listFilledAllJustMap, listFilledConcat, listFilledMap
     )
 
 {-|
@@ -17,7 +17,7 @@ module Util exposing
 
 @docs ListFilled, listFilledOne
 @docs listFilledHead, listFilledAll
-@docs listFirstJustMap, listFilledAllOkMap, listFilledConcat, listFilledMap
+@docs listFirstJustMap, listFilledAllJustMap, listFilledConcat, listFilledMap
 
 -}
 
@@ -47,7 +47,7 @@ listAllJustMap map =
 
 listFirstJustMap : (a -> Maybe b) -> List a -> Maybe b
 listFirstJustMap map =
-    List.foldr
+    List.foldl
         (\el soFar ->
             case soFar of
                 Nothing ->
@@ -83,17 +83,17 @@ listAllOkMap map =
         (Ok [])
 
 
-listFilledAllOkMap : (a -> Result error b) -> ListFilled a -> Result error (ListFilled b)
-listFilledAllOkMap map =
+listFilledAllJustMap : (a -> Maybe b) -> ListFilled a -> Maybe (ListFilled b)
+listFilledAllJustMap map =
     \( head, tail ) ->
         case head |> map of
-            Err headError ->
-                headError |> Err
+            Nothing ->
+                Nothing
 
-            Ok headOk ->
+            Just headOk ->
                 tail
-                    |> listAllOkMap map
-                    |> Result.map (\tailOk -> ( headOk, tailOk ))
+                    |> listAllJustMap map
+                    |> Maybe.map (\tailOk -> ( headOk, tailOk ))
 
 
 listFilledAll : (a -> Bool) -> ListFilled a -> Bool
