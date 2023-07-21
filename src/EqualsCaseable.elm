@@ -14,7 +14,7 @@ import Elm.Syntax.Range as Range exposing (Range, emptyRange)
 import Pretty
 import Review.Fix as Fix
 import Review.Rule as Rule exposing (Rule)
-import Util exposing (ListFilled, listAllJustMap, listFilledAll, listFilledAllJustMap, listFilledConcat, listFilledHead, listFilledMap, listFilledOne, listFirstJustMap)
+import Util exposing (ListFilled, listAllJustMap, listFilledAllJustMap, listFilledConcat, listFilledHead, listFilledMap, listFilledOne, listFilledToList, listFirstJustMap)
 
 
 {-| Reports when `==` is used but there's there is an equivalent `case of` available.
@@ -172,8 +172,8 @@ initialContext =
         |> Rule.withSourceCodeExtractor
 
 
-errorInfo : { message : String, details : List String }
-errorInfo =
+errorInfoFixable : { message : String, details : List String }
+errorInfoFixable =
     { message = "equivalent `case of` exists"
     , details =
         [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
@@ -183,45 +183,14 @@ errorInfo =
     }
 
 
-errorInfoInconsistentEquals : { message : String, details : List String }
-errorInfoInconsistentEquals =
+errorInfoInconsistent : { message : String, details : List String }
+errorInfoInconsistent =
     { message = "equivalent `case of` exists"
     , details =
         [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
         , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
         , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
-        , """Note: Since your condition uses both /= and ==, fixing isn't automatic. You will need more than 2 cases. An example:
-
-    if a == 'a' && b /= 'b' then
-        aANotBB
-    else
-        maybeBBOrNotAA
-
-as a case of:
-
-    case a of
-        'a' ->
-            case b of
-                'b' ->
-                    maybeBBOrNotAA
-                
-                _ ->
-                    aANotBB
-        _ ->
-            maybeBBOrNotAA
-"""
-        ]
-    }
-
-
-errorInfoNotAllAndEquals : { message : String, details : List String }
-errorInfoNotAllAndEquals =
-    { message = "equivalent `case of` exists"
-    , details =
-        [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
-        , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
-        , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
-        , """Note: Since your condition isn't as simple as `(a == A) && (b == B) && ...`, fixing isn't automatic. You will need more than 2 cases. An example:
+        , """Note: Since your condition isn't as simple as `(a == A) && (b == B) && ...` or `(a /= A) || (b /= B) || ...`, fixing isn't automatic. An example:
 
     if a == 'a' || b == 'b' then
         aAOrBB
@@ -401,7 +370,7 @@ expressionVisitor context =
     case context.expression |> Node.value of
         Expression.IfBlock condition (Node onTrueRange _) (Node onFalseRange _) ->
             let
-                errors : List (Rule.Error {})
+                errors : Maybe (ListFilled (Rule.Error {}))
                 errors =
                     ifCheck
                         { extractSourceCode = context.context.extractSourceCode
@@ -412,11 +381,11 @@ expressionVisitor context =
                         }
             in
             case errors of
-                [] ->
+                Nothing ->
                     ( [], context.context )
 
-                error0 :: error1Up ->
-                    ( error0 :: error1Up
+                Just errorsFilled ->
+                    ( errorsFilled |> listFilledToList
                     , context.context |> addCovered (condition |> Node.range)
                     )
 
@@ -427,7 +396,7 @@ expressionVisitor context =
 
                 Everywhere ->
                     let
-                        errors : List (Rule.Error {})
+                        errors : Maybe (ListFilled (Rule.Error {}))
                         errors =
                             nonIfCheck
                                 { extractSourceCode = context.context.extractSourceCode
@@ -435,11 +404,11 @@ expressionVisitor context =
                                 }
                     in
                     case errors of
-                        [] ->
+                        Nothing ->
                             ( [], context.context )
 
-                        error0 :: error1Up ->
-                            ( error0 :: error1Up
+                        Just errorsFilled ->
+                            ( errorsFilled |> listFilledToList
                             , context.context
                                 |> addCovered (context.expression |> Node.range)
                             )
@@ -461,107 +430,132 @@ ifCheck :
     , onTrueRange : Range
     , onFalseRange : Range
     }
-    -> List (Rule.Error {})
+    -> Maybe (ListFilled (Rule.Error {}))
 ifCheck context =
     case context.condition |> equalCaseablesPossiblyInAnd of
-        Nothing ->
-            case context.condition |> firstEqualsCaseable of
-                Nothing ->
-                    []
-
-                Just equalsCaseable ->
-                    [ Rule.error errorInfoNotAllAndEquals equalsCaseable.equalsOperationRange ]
-
         Just parts ->
-            case parts |> consistentEquals of
-                Nothing ->
-                    [ Rule.error errorInfoInconsistentEquals (context.condition |> Node.range) ]
+            Rule.errorWithFix
+                errorInfoFixable
+                (context.condition |> Node.range)
+                [ { matched = parts |> listFilledMap (\part -> context.extractSourceCode part.matchedRange)
+                  , pattern = parts |> listFilledMap .pattern
+                  , cases =
+                        { match = context.extractSourceCode context.onTrueRange
+                        , mismatch = context.extractSourceCode context.onFalseRange
+                        }
+                  }
+                    |> matchToCaseOf
+                    |> afterFirstIndentBy (context.expressionRange.start.column - 1)
+                    |> Fix.replaceRangeBy context.expressionRange
+                ]
+                |> listFilledOne
+                |> Just
 
-                Just equals ->
-                    [ Rule.errorWithFix
-                        errorInfo
+        Nothing ->
+            case context.condition |> notEqualCaseablesPossiblyInOr of
+                Just parts ->
+                    Rule.errorWithFix
+                        errorInfoFixable
                         (context.condition |> Node.range)
                         [ { matched = parts |> listFilledMap (\part -> context.extractSourceCode part.matchedRange)
                           , pattern = parts |> listFilledMap .pattern
                           , cases =
-                                casesMatching equals
-                                    { match = context.extractSourceCode context.onTrueRange
-                                    , mismatch = context.extractSourceCode context.onFalseRange
-                                    }
+                                { match = context.extractSourceCode context.onFalseRange
+                                , mismatch = context.extractSourceCode context.onTrueRange
+                                }
                           }
                             |> matchToCaseOf
                             |> afterFirstIndentBy (context.expressionRange.start.column - 1)
                             |> Fix.replaceRangeBy context.expressionRange
                         ]
-                    ]
+                        |> listFilledOne
+                        |> Just
+
+                Nothing ->
+                    case context.condition |> firstEqualsCaseable of
+                        Just equalsCaseable ->
+                            Rule.error errorInfoInconsistent equalsCaseable.equalsOperationRange
+                                |> listFilledOne
+                                |> Just
+
+                        Nothing ->
+                            Nothing
 
 
-nonIfCheck : { expression : Node Expression, extractSourceCode : Range -> String } -> List (Rule.Error {})
+nonIfCheck :
+    { expression : Node Expression, extractSourceCode : Range -> String }
+    -> Maybe (ListFilled (Rule.Error {}))
 nonIfCheck context =
     case context.expression |> equalCaseablesPossiblyInAnd of
-        Nothing ->
-            case context.expression |> Node.value of
-                Expression.Application ((Node _ (Expression.PrefixOperator operator)) :: (Node _ argument) :: []) ->
-                    if [ "==", "/=" ] |> List.member operator then
-                        case argument |> expressionToPattern of
-                            Just _ ->
-                                [ Rule.error errorInfoCurriedPrefixOperation (context.expression |> Node.range) ]
-
-                            Nothing ->
-                                []
-
-                    else
-                        []
-
-                _ ->
-                    []
-
         Just parts ->
-            case parts |> consistentEquals of
-                Nothing ->
-                    [ Rule.error errorInfoInconsistentEquals (context.expression |> Node.range) ]
+            Rule.errorWithFix
+                errorInfoFixable
+                (context.expression |> Node.range)
+                [ { matched = parts |> listFilledMap (\part -> context.extractSourceCode part.matchedRange)
+                  , pattern = parts |> listFilledMap .pattern
+                  , cases = { match = "True", mismatch = "False" }
+                  }
+                    |> matchToCaseOf
+                    |> parenthesize
+                    |> afterFirstIndentBy ((context.expression |> Node.range).start.column - 1)
+                    |> Fix.replaceRangeBy (context.expression |> Node.range)
+                ]
+                |> listFilledOne
+                |> Just
 
-                Just equals ->
-                    [ Rule.errorWithFix
-                        errorInfo
+        Nothing ->
+            case context.expression |> notEqualCaseablesPossiblyInOr of
+                Just parts ->
+                    Rule.errorWithFix
+                        errorInfoFixable
                         (context.expression |> Node.range)
                         [ { matched = parts |> listFilledMap (\part -> context.extractSourceCode part.matchedRange)
                           , pattern = parts |> listFilledMap .pattern
-                          , cases =
-                                casesMatching equals
-                                    { match = "True", mismatch = "False" }
+                          , cases = { match = "False", mismatch = "True" }
                           }
                             |> matchToCaseOf
                             |> parenthesize
                             |> afterFirstIndentBy ((context.expression |> Node.range).start.column - 1)
                             |> Fix.replaceRangeBy (context.expression |> Node.range)
                         ]
-                    ]
+                        |> listFilledOne
+                        |> Just
+
+                Nothing ->
+                    case context.expression |> checkForPrefixEqualsOperation of
+                        Just prefixEqualsOperationError ->
+                            prefixEqualsOperationError |> Just
+
+                        Nothing ->
+                            case context.expression |> firstEqualsCaseable of
+                                Nothing ->
+                                    Nothing
+
+                                Just equalsCaseable ->
+                                    Rule.error errorInfoInconsistent equalsCaseable.equalsOperationRange
+                                        |> listFilledOne
+                                        |> Just
 
 
-casesMatching : Equality -> { mismatch : String, match : String } -> { mismatch : String, match : String }
-casesMatching equals casesOnEqual =
-    case equals of
-        Equals ->
-            casesOnEqual
+checkForPrefixEqualsOperation : Node Expression -> Maybe (ListFilled (Rule.Error {}))
+checkForPrefixEqualsOperation =
+    \expression ->
+        case expression |> Node.value of
+            Expression.Application ((Node _ (Expression.PrefixOperator operator)) :: (Node _ argument) :: []) ->
+                if [ "==", "/=" ] |> List.member operator then
+                    case argument |> expressionToPattern of
+                        Just _ ->
+                            listFilledOne (Rule.error errorInfoCurriedPrefixOperation (expression |> Node.range))
+                                |> Just
 
-        NotEquals ->
-            { match = casesOnEqual.mismatch
-            , mismatch = casesOnEqual.match
-            }
+                        Nothing ->
+                            Nothing
 
+                else
+                    Nothing
 
-consistentEquals : ListFilled { part_ | equality : Equality } -> Maybe Equality
-consistentEquals =
-    \parts ->
-        if parts |> listFilledAll (\part -> part.equality == Equals) then
-            Equals |> Just
-
-        else if parts |> listFilledAll (\part -> part.equality == NotEquals) then
-            NotEquals |> Just
-
-        else
-            Nothing
+            _ ->
+                Nothing
 
 
 equalCaseablesPossiblyInAnd :
@@ -572,58 +566,39 @@ equalCaseablesPossiblyInAnd :
                 { matchedRange : Range
                 , equalsOperationRange : Range
                 , pattern : Pattern
-                , equality : Equality
                 }
             )
 equalCaseablesPossiblyInAnd expression =
     case expression |> Node.value of
         Expression.OperatorApplication symbol _ left right ->
-            let
-                equalityWithCaseable :
-                    Equality
-                    ->
-                        Maybe
-                            (ListFilled
-                                { matchedRange : Range
-                                , equalsOperationRange : Range
-                                , pattern : Pattern
-                                , equality : Equality
-                                }
-                            )
-                equalityWithCaseable equality =
+            case symbol of
+                "&&" ->
+                    ( left, [ right ] )
+                        |> listFilledAllJustMap equalCaseablesPossiblyInAnd
+                        |> Maybe.map listFilledConcat
+
+                "==" ->
                     case left |> Node.value |> expressionToPattern of
                         Just leftAsPattern ->
                             listFilledOne
                                 { matchedRange = right |> Node.range
                                 , equalsOperationRange = expression |> Node.range
-                                , equality = equality
                                 , pattern = leftAsPattern
                                 }
                                 |> Just
 
                         Nothing ->
                             case right |> Node.value |> expressionToPattern of
-                                Nothing ->
-                                    Nothing
-
                                 Just rightAsPattern ->
                                     listFilledOne
                                         { matchedRange = left |> Node.range
                                         , equalsOperationRange = expression |> Node.range
-                                        , equality = equality
                                         , pattern = rightAsPattern
                                         }
                                         |> Just
-            in
-            case symbol of
-                "&&" ->
-                    ( left, [ right ] ) |> listFilledAllJustMap equalCaseablesPossiblyInAnd |> Maybe.map listFilledConcat
 
-                "==" ->
-                    equalityWithCaseable Equals
-
-                "/=" ->
-                    equalityWithCaseable NotEquals
+                                Nothing ->
+                                    Nothing
 
                 _ ->
                     Nothing
@@ -632,9 +607,53 @@ equalCaseablesPossiblyInAnd expression =
             Nothing
 
 
-type Equality
-    = NotEquals
-    | Equals
+notEqualCaseablesPossiblyInOr :
+    Node Expression
+    ->
+        Maybe
+            (ListFilled
+                { matchedRange : Range
+                , equalsOperationRange : Range
+                , pattern : Pattern
+                }
+            )
+notEqualCaseablesPossiblyInOr expression =
+    case expression |> Node.value of
+        Expression.OperatorApplication symbol _ left right ->
+            case symbol of
+                "||" ->
+                    ( left, [ right ] )
+                        |> listFilledAllJustMap notEqualCaseablesPossiblyInOr
+                        |> Maybe.map listFilledConcat
+
+                "/=" ->
+                    case left |> Node.value |> expressionToPattern of
+                        Just leftAsPattern ->
+                            listFilledOne
+                                { matchedRange = right |> Node.range
+                                , equalsOperationRange = expression |> Node.range
+                                , pattern = leftAsPattern
+                                }
+                                |> Just
+
+                        Nothing ->
+                            case right |> Node.value |> expressionToPattern of
+                                Just rightAsPattern ->
+                                    listFilledOne
+                                        { matchedRange = left |> Node.range
+                                        , equalsOperationRange = expression |> Node.range
+                                        , pattern = rightAsPattern
+                                        }
+                                        |> Just
+
+                                Nothing ->
+                                    Nothing
+
+                _ ->
+                    Nothing
+
+        _ ->
+            Nothing
 
 
 firstEqualsCaseable :
@@ -644,18 +663,27 @@ firstEqualsCaseable :
             { pattern : Pattern
             , matchedRange : Range
             , equalsOperationRange : Range
-            , equality : Equality
             }
 firstEqualsCaseable expression =
-    case expression |> Node.value of
-        Expression.OperatorApplication "||" _ left right ->
-            listFirstJustMap firstEqualsCaseable [ left, right ]
+    case expression |> equalCaseablesPossiblyInAnd of
+        Just andParts ->
+            andParts |> listFilledHead |> Just
 
-        nonAndOrOr ->
-            nonAndOrOr
-                |> Node (expression |> Node.range)
-                |> equalCaseablesPossiblyInAnd
-                |> Maybe.map listFilledHead
+        Nothing ->
+            case expression |> notEqualCaseablesPossiblyInOr of
+                Just andParts ->
+                    andParts |> listFilledHead |> Just
+
+                Nothing ->
+                    case expression |> Node.value of
+                        Expression.OperatorApplication "||" _ left right ->
+                            listFirstJustMap firstEqualsCaseable [ left, right ]
+
+                        Expression.OperatorApplication "&&" _ left right ->
+                            listFirstJustMap firstEqualsCaseable [ left, right ]
+
+                        _ ->
+                            Nothing
 
 
 expressionToPattern : Expression -> Maybe Pattern
