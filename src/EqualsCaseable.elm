@@ -59,7 +59,7 @@ forbid forbiddenLocation =
             (\expression context ->
                 if
                     context.alreadyCovered
-                        |> List.any (\range -> range |> rangeIsInside (expression |> Node.range))
+                        |> List.any (\range -> (expression |> Node.range) |> rangeIsInside range)
                 then
                     ( [], context )
 
