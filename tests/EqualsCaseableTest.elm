@@ -129,6 +129,47 @@ a =
             "a and or b is filled"
 """
                         ]
+        , test "should report if == [] || == []" <|
+            \() ->
+                """module A exposing (..)
+a =
+    if aList == [] || bList == [] then
+        "a and or b empty"
+
+    else
+        "filled"
+"""
+                    |> Review.Test.run (forbid EqualsCaseable.Everywhere)
+                    |> Review.Test.expectErrors
+                        [ Review.Test.error
+                            { message = "equivalent `case of` exists"
+                            , details =
+                                [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
+                                , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
+                                , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
+                                , """Note: Since your condition isn't as simple as `(a == A) && (b == B) && ...`, fixing isn't automatic. You will need more than 2 cases. An example:
+
+    if a == 'a' || b == 'b' then
+        aAOrBB
+    else
+        notAAOrNotBB
+
+as a case of:
+
+    case ( a, b ) of
+        ( A, _ ) ->
+            aaOrBB
+        
+        ( _, B ) ->
+            aaOrBB
+        
+        ( _, _ ) ->
+            notAAOrNotBB
+"""
+                                ]
+                            , under = "aList == [] || bList == []"
+                            }
+                        ]
         , test "should report if == [] and keep indentation" <|
             \() ->
                 """module A exposing (..)
@@ -181,19 +222,19 @@ a =
                                 , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
                                 , """Note: Since your condition is a curried prefix operation, I don't have a variable name I can use to fix it automatically. An example:
 
-List.all ((/=) [])
+    List.all ((/=) [])
 
 as a case of:
 
-List.all
-    (\\list ->
-        case list of
-            [] ->
-                False
-            
-            _ :: _ ->
-                True
-    )
+    List.all
+        (\\list ->
+            case list of
+                [] ->
+                    False
+                
+                _ :: _ ->
+                    True
+        )
 """
                                 ]
                             , under = "(/=) []"

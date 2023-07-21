@@ -253,19 +253,19 @@ errorInfoCurriedPrefixOperation =
         , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
         , """Note: Since your condition is a curried prefix operation, I don't have a variable name I can use to fix it automatically. An example:
 
-List.all ((/=) [])
+    List.all ((/=) [])
 
 as a case of:
 
-List.all
-    (\\list ->
-        case list of
-            [] ->
-                False
-            
-            _ :: _ ->
-                True
-    )
+    List.all
+        (\\list ->
+            case list of
+                [] ->
+                    False
+                
+                _ :: _ ->
+                    True
+        )
 """
         ]
     }
