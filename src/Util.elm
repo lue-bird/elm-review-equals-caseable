@@ -64,25 +64,6 @@ listFirstJustMap map =
         Nothing
 
 
-listAllOkMap : (a -> Result error b) -> List a -> Result error (List b)
-listAllOkMap map =
-    List.foldr
-        (\el soFar ->
-            case soFar of
-                Err soFarError ->
-                    soFarError |> Err
-
-                Ok soFarList ->
-                    case el |> map of
-                        Err elError ->
-                            elError |> Err
-
-                        Ok elMapped ->
-                            soFarList |> (::) elMapped |> Ok
-        )
-        (Ok [])
-
-
 listFilledAllJustMap : (a -> Maybe b) -> ListFilled a -> Maybe (ListFilled b)
 listFilledAllJustMap map =
     \( head, tail ) ->
