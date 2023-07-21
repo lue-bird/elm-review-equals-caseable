@@ -244,6 +244,33 @@ as a case of:
     }
 
 
+errorInfoCurriedPrefixOperation : { message : String, details : List String }
+errorInfoCurriedPrefixOperation =
+    { message = "equivalent `case of` exists"
+    , details =
+        [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
+        , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
+        , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
+        , """Note: Since your condition is a curried prefix operation, I don't have a variable name I can use to fix it automatically. An example:
+
+List.all ((/=) [])
+
+as a case of:
+
+List.all
+    (\\list ->
+        case list of
+            [] ->
+                False
+            
+            _ :: _ ->
+                True
+    )
+"""
+        ]
+    }
+
+
 matchToCaseOf :
     { matched : ListFilled String
     , pattern : ListFilled Pattern
@@ -479,7 +506,21 @@ nonIfCheck : { expression : Node Expression, extractSourceCode : Range -> String
 nonIfCheck context =
     case context.expression |> equalCaseablesPossiblyInAnd of
         Err _ ->
-            []
+            case context.expression |> Node.value of
+                Expression.Application ((Node _ (Expression.PrefixOperator operator)) :: (Node _ argument) :: []) ->
+                    if [ "==", "/=" ] |> List.member operator then
+                        case argument |> expressionToPattern of
+                            Just _ ->
+                                [ Rule.error errorInfoCurriedPrefixOperation (context.expression |> Node.range) ]
+
+                            Nothing ->
+                                []
+
+                    else
+                        []
+
+                _ ->
+                    []
 
         Ok parts ->
             case parts |> consistentEquals of
