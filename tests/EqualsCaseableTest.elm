@@ -33,15 +33,15 @@ a =
 """
                     |> Review.Test.run (forbid EqualsCaseable.InIf)
                     |> Review.Test.expectNoErrors
-        , test "should report if == []" <|
+        , test "should report if == Variant" <|
             \() ->
                 """module A exposing (..)
 a =
-    if list == [] then
-        "empty"
+    if choice == Variant then
+        "variant"
 
     else
-        "filled"
+        "not variant"
 """
                     |> Review.Test.run (forbid EqualsCaseable.Everywhere)
                     |> Review.Test.expectErrors
@@ -52,17 +52,17 @@ a =
                                 , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
                                 , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
                                 ]
-                            , under = "list == []"
+                            , under = "choice == Variant"
                             }
                             |> Review.Test.whenFixed
                                 """module A exposing (..)
 a =
-    case list of
-        [] ->
-            "empty"
+    case choice of
+        Variant ->
+            "variant"
         
         _ ->
-            "filled"
+            "not variant"
 """
                         ]
         , test "should report if /= []" <|
