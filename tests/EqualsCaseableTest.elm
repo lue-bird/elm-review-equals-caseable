@@ -167,7 +167,49 @@ as a case of:
             notAAOrNotBB
 """
                                 ]
-                            , under = "aList == [] || bList == []"
+                            , under = "aList == []"
+                            }
+                        ]
+        , test "should report if == [] && /= []" <|
+            \() ->
+                """module A exposing (..)
+a =
+    if aList == [] && bList /= [] then
+        "a empty and b filled"
+
+    else
+        "a filled and or b empty"
+"""
+                    |> Review.Test.run (forbid EqualsCaseable.Everywhere)
+                    |> Review.Test.expectErrors
+                        [ Review.Test.error
+                            { message = "equivalent `case of` exists"
+                            , details =
+                                [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
+                                , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
+                                , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
+                                , """Note: Since your condition uses both /= and ==, fixing isn't automatic. You will need more than 2 cases. An example:
+
+    if a == 'a' && b /= 'b' then
+        aANotBB
+    else
+        maybeBBOrNotAA
+
+as a case of:
+
+    case a of
+        'a' ->
+            case b of
+                'b' ->
+                    maybeBBOrNotAA
+                
+                _ ->
+                    aANotBB
+        _ ->
+            maybeBBOrNotAA
+"""
+                                ]
+                            , under = "aList == [] && bList /= []"
                             }
                         ]
         , test "should report if == [] and keep indentation" <|
