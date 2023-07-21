@@ -684,6 +684,13 @@ expressionToPattern =
                     |> listAllJustMap (\(Node _ el) -> el |> expressionToPattern |> Maybe.map (Node emptyRange))
                     |> Maybe.map Pattern.ListPattern
 
+            Expression.FunctionOrValue qualification name ->
+                if name |> isVariantName then
+                    Pattern.NamedPattern { moduleName = qualification, name = name } [] |> Just
+
+                else
+                    Nothing
+
             Expression.Application ((Node _ (Expression.FunctionOrValue qualification appliedName)) :: arguments) ->
                 if appliedName |> isVariantName then
                     arguments
@@ -700,9 +707,6 @@ expressionToPattern =
                 Nothing
 
             Expression.OperatorApplication _ _ _ _ ->
-                Nothing
-
-            Expression.FunctionOrValue _ _ ->
                 Nothing
 
             Expression.RecordAccess _ _ ->
