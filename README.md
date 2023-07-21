@@ -109,7 +109,7 @@ toVariant pattern =
         in
         ...
 ```
-Don't you do this to yourself. Let the compiler know as much as you about the path you're in.
+Don't do this to yourself. Let the compiler know as much as you about the path you're in.
 ```elm
 toVariant pattern =
     case pattern.ending of
