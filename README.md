@@ -120,7 +120,7 @@ toVariant pattern =
         Just patternEnding ->
             let
                 allSegments =
-                    ... ++ [ patternEnding ]
+                    ... ++ [ endingToVariantName patternEnding ]
             in
             ...
 ```
