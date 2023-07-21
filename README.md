@@ -92,8 +92,7 @@ Now if you add moderator, elm will show you where there's more to handle specifi
 
 
 ### gives the compiler as much information as you have
-To illustrate it,
-here's [a real example](https://github.com/dillonkearns/elm-pages/blob/9d6d30235f7db8d3c2c0b40d78f3cc5a6278562d/src/Pages/Internal/RoutePattern.elm#L418)
+Here's [a real example](https://github.com/dillonkearns/elm-pages/blob/9d6d30235f7db8d3c2c0b40d78f3cc5a6278562d/src/Pages/Internal/RoutePattern.elm#L418)
 ```elm
 toVariant pattern =
     if ... pattern.ending == Nothing then
@@ -123,6 +122,58 @@ toVariant pattern =
                     ... ++ [ endingToVariantName patternEnding ]
             in
             ...
+```
+
+### doesn't make you jump around
+Here's [a real example](https://github.com/dillonkearns/elm-pages/blob/9d6d30235f7db8d3c2c0b40d78f3cc5a6278562d/src/Pages/Internal/Platform.elm#L941)
+```elm
+if fields.method == Form.Get then
+    model.key
+        |> Maybe.map
+            (\key ->
+                Browser.Navigation.pushUrl key
+                    (appendFormQueryParams fields)
+            )
+        |> Maybe.withDefault
+            Cmd.none
+
+else
+    -- wait, ... What is else?
+    let
+        urlToSubmitTo : Url
+        urlToSubmitTo =
+            model.url
+    in
+    fetchRouteData -1
+        (UpdateCacheAndUrlNew False model.url Nothing)
+        config
+        urlToSubmitTo
+        (Just fields)
+```
+be explicit :)
+```elm
+case fields.method of
+    Form.Get ->
+        model.key
+            |> Maybe.map
+                (\key ->
+                    Browser.Navigation.pushUrl key
+                        (appendFormQueryParams fields)
+                )
+            |> Maybe.withDefault
+                Cmd.none
+
+    Form.Post ->
+        let
+            urlToSubmitTo : Url
+            urlToSubmitTo =
+                model.url
+        in
+        fetchRouteData -1
+            (UpdateCacheAndUrlNew False model.url Nothing)
+            config
+            urlToSubmitTo
+            (Just fields)
 ```
 
 
