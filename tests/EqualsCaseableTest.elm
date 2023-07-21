@@ -21,6 +21,8 @@ a =
     , function == always []
     , function == (+)
     , function == (\\arg -> arg)
+    , choice == Variant variable
+    , tuple == ( [], variable )
     ]
 """
                     |> Review.Test.run (forbid EqualsCaseable.Everywhere)
@@ -63,6 +65,38 @@ a =
         
         _ ->
             "not variant"
+"""
+                        ]
+        , test "should report if == ( Variant [], [ (), ('a'), \"wat\" ] )" <|
+            \() ->
+                """module A exposing (..)
+a =
+    if tuple == ( Variant [], [ (), ('a'), "wat" ] ) then
+        "specific"
+
+    else
+        "not specific"
+"""
+                    |> Review.Test.run (forbid EqualsCaseable.Everywhere)
+                    |> Review.Test.expectErrors
+                        [ Review.Test.error
+                            { message = "equivalent `case of` exists"
+                            , details =
+                                [ "You are checking for equality against a value that could be a pattern in an equivalent `case of`!"
+                                , "You can replace this check with a `case of` where you use the value you're matching for as a pattern."
+                                , "This can aid structuring your code in a way where the compiler knows as much about the current branch as you. Read more in the readme: https://dark.elm.dmy.fr/packages/lue-bird/elm-review-equals-caseable/latest/"
+                                ]
+                            , under = "tuple == ( Variant [], [ (), ('a'), \"wat\" ] )"
+                            }
+                            |> Review.Test.whenFixed
+                                """module A exposing (..)
+a =
+    case tuple of
+        ( Variant [], [ (), 'a', "wat" ] ) ->
+            "specific"
+        
+        _ ->
+            "not specific"
 """
                         ]
         , test "should report if /= []" <|
