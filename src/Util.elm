@@ -1,8 +1,9 @@
 module Util exposing
     ( listAllJustMap
     , ListFilled, listFilledOne
-    , listFilledHead, listFilledAll
+    , listFilledHead
     , listFirstJustMap, listFilledAllJustMap, listFilledConcat, listFilledMap
+    , listFilledToList
     )
 
 {-|
@@ -16,8 +17,9 @@ module Util exposing
 ## list that can't be empty
 
 @docs ListFilled, listFilledOne
-@docs listFilledHead, listFilledAll
+@docs listFilledHead
 @docs listFirstJustMap, listFilledAllJustMap, listFilledConcat, listFilledMap
+@docs listFilledToList
 
 -}
 
@@ -75,12 +77,6 @@ listFilledAllJustMap map =
                 tail
                     |> listAllJustMap map
                     |> Maybe.map (\tailOk -> ( headOk, tailOk ))
-
-
-listFilledAll : (a -> Bool) -> ListFilled a -> Bool
-listFilledAll map =
-    \( head, tail ) ->
-        (head |> map) && (tail |> List.all map)
 
 
 listFilledOne : a -> ListFilled a
